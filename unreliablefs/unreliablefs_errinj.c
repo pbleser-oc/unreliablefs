@@ -169,6 +169,9 @@ int error_inject(const char* path, fuse_op operation)
      */
     int rc = -0;
     struct errinj_conf *err;
+    /* slowdowns are collected under the lock and slept after releasing it,
+     * so that a slowed down operation doesn't block all other operations */
+    unsigned long long slowdown = 0;
     /* read configuration file on change */
     pthread_mutex_lock(&conf.mutex);
     if (strcmp(path, conf.config_path) == 0) {
@@ -221,22 +224,23 @@ int error_inject(const char* path, fuse_op operation)
             fprintf(stdout, "errno '%s'\n", strerror(rc));
             rc = -rc;
             break;
-        case ERRINJ_SLOWDOWN: ;
-	    struct timespec ts = {};
-	    ts.tv_sec = err->duration / 1000000000;
-	    ts.tv_nsec = err->duration % 1000000000;
-            fprintf(stdout, "start of '%s' slowdown for '%llu' ns\n", op_name, err->duration);
-            if (nanosleep(&ts, NULL) != 0) {
-		perror("nanosleep");
-            } else {
-		fprintf(stdout, "end of '%s' slowdown with '%llu' ns\n", op_name, err->duration);
-            }
+        case ERRINJ_SLOWDOWN:
+            fprintf(stdout, "'%s' slowdown for '%llu' ns\n", op_name, err->duration);
+            slowdown += err->duration;
             break;
         }
     }
 
 cleanup:
     pthread_mutex_unlock(&conf.mutex);
+    if (slowdown > 0) {
+        struct timespec ts = {};
+        ts.tv_sec = slowdown / 1000000000;
+        ts.tv_nsec = slowdown % 1000000000;
+        if (nanosleep(&ts, NULL) != 0) {
+            perror("nanosleep");
+        }
+    }
     return rc;
 }
 
