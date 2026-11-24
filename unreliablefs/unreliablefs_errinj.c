@@ -172,6 +172,12 @@ int error_inject(const char* path, fuse_op operation)
     /* slowdowns are collected under the lock and slept after releasing it,
      * so that a slowed down operation doesn't block all other operations */
     unsigned long long slowdown = 0;
+    /* With "-o hard_remove", operations on an open file that was removed get
+     * no path (NULL), only the file handle. Match the path regexps against an
+     * empty path then, so that ".*" still applies to them. */
+    if (path == NULL) {
+        path = "";
+    }
     /* read configuration file on change */
     pthread_mutex_lock(&conf.mutex);
     if (strcmp(path, conf.config_path) == 0) {
